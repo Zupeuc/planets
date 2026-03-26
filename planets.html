@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Planet Positions Now</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#050a14">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="./icon.svg">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #050a14;
+      color: #c8d8f0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      padding: 20px 14px 40px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: 300;
+      letter-spacing: 0.15em;
+      color: #e8f0ff;
+      margin-bottom: 4px;
+    }
+    #timestamp {
+      text-align: center;
+      font-size: 0.76rem;
+      color: #5a7a9a;
+      margin-bottom: 16px;
+    }
+
+    /* ── Location bar ─────────────────────────────── */
+    #loc-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    #loc-bar input {
+      background: #0a1828;
+      border: 1px solid #1e3a5a;
+      color: #a8c8e8;
+      padding: 6px 10px;
+      border-radius: 6px;
+      width: 150px;
+      font-size: 0.82rem;
+    }
+    #loc-bar input::placeholder { color: #2a4a6a; }
+    #loc-bar input:focus { outline: none; border-color: #3a6a9a; }
+    #gps-status {
+      font-size: 0.75rem;
+      color: #4a7a9a;
+      min-width: 100px;
+    }
+
+    /* ── Buttons ──────────────────────────────────── */
+    button {
+      background: #0d1f35;
+      border: 1px solid #1e3a5a;
+      color: #7ab0d8;
+      padding: 6px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      letter-spacing: 0.05em;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { background: #142840; border-color: #3a6a9a; color: #a0d0f0; }
+
+    #controls {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    #auto-label { font-size: 0.74rem; color: #3a5a7a; align-self: center; }
+
+    /* ── Cards ────────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 12px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #090f1c;
+      border: 1px solid #152030;
+      border-radius: 10px;
+      padding: 14px 16px;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: #2a4a6a; }
+    .card.up   { border-left: 3px solid #2a7a4a; }
+    .card.down { border-left: 3px solid #5a2a2a; opacity: 0.72; }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .planet-icon { font-size: 1.6rem; line-height: 1; }
+    .planet-name { font-size: 1rem; font-weight: 600; color: #dce8ff; letter-spacing: 0.04em; }
+    .badge {
+      margin-left: auto;
+      font-size: 0.66rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+    }
+    .badge-up   { background: #0d2a1a; color: #3dba6e; border: 1px solid #1a5a30; }
+    .badge-down { background: #2a0d0d; color: #ba4040; border: 1px solid #5a1a1a; }
+
+    .card-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px 10px;
+      font-size: 0.8rem;
+    }
+    .lbl { color: #3a5a7a; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; }
+    .val { color: #a8c8e8; font-variant-numeric: tabular-nums; }
+    .val.gold  { color: #f0c060; }
+    .val.green { color: #80d8a0; font-style: italic; }
+    .full { grid-column: 1 / -1; }
+
+    .alt-bar { grid-column: 1/-1; height: 3px; background: #0d1f35; border-radius: 2px; overflow: hidden; margin-top: 6px; }
+    .alt-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
+
+    #status { text-align: center; color: #3a5a7a; font-size: 0.78rem; margin-top: 16px; }
+    #err-msg {
+      text-align: center; color: #ba5050; font-size: 0.82rem;
+      margin: 10px auto; max-width: 500px;
+      background: #1a0808; border: 1px solid #5a1010;
+      border-radius: 8px; padding: 10px; display: none;
+    }
+
+    /* ── Stars ────────────────────────────────────── */
+    .star-bg { position: fixed; inset: 0; pointer-events: none; z-index: -1; overflow: hidden; }
+    .star {
+      position: absolute; background: white; border-radius: 50%;
+      animation: twinkle linear infinite;
+    }
+    @keyframes twinkle { 0%,100%{opacity:.15} 50%{opacity:.7} }
+  </style>
+</head>
+<body>
+
+<div class="star-bg" id="stars"></div>
+
+<h1>&#9733; Planet Positions Now</h1>
+<div id="timestamp">—</div>
+
+<div id="loc-bar">
+  <input id="inp-lat" type="number" step="0.001" placeholder="Latitude (e.g. 48.86)" />
+  <input id="inp-lon" type="number" step="0.001" placeholder="Longitude (e.g. 2.35)" />
+  <button onclick="computeFromForm()">Show planets</button>
+  <button onclick="gpsLocate()">&#8982; Use GPS</button>
+  <span id="gps-status">Enter coords or use GPS</span>
+</div>
+
+<div id="controls">
+  <button onclick="refresh()">&#8635; Refresh</button>
+  <button onclick="toggleAuto()" id="auto-btn">Auto: ON</button>
+  <span id="auto-label">· updates every 60s</span>
+</div>
+
+<div id="err-msg"></div>
+<div class="grid" id="grid"></div>
+<div id="status"></div>
+
+<script>
+// ════════════════════════════════════════════════════════
+//  Star background
+// ════════════════════════════════════════════════════════
+(function() {
+  const c = document.getElementById('stars');
+  for (let i = 0; i < 100; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    const sz = Math.random() * 2 + 0.4;
+    s.style.cssText = `width:${sz}px;height:${sz}px;left:${Math.random()*100}%;top:${Math.random()*100}%;animation-duration:${(Math.random()*4+2).toFixed(1)}s;animation-delay:${(Math.random()*5).toFixed(1)}s`;
+    c.appendChild(s);
+  }
+})();
+
+// ════════════════════════════════════════════════════════
+//  Self-contained astronomy engine
+//  Based on Paul Schlyter's "How to compute planetary positions"
+//  https://www.stjarnhimlen.se/comp/ppcomp.html
+//  Accuracy: ~1–2° for planets, adequate for constellation ID
+// ════════════════════════════════════════════════════════
+
+const D2R = Math.PI / 180;
+const R2D = 180 / Math.PI;
+
+function rev(x)  { return x - Math.floor(x / 360) * 360; }
+function sind(x) { return Math.sin(x * D2R); }
+function cosd(x) { return Math.cos(x * D2R); }
+function atd2(y, x) { return Math.atan2(y, x) * R2D; }
+function asnd(x)    { return Math.asin(Math.max(-1, Math.min(1, x))) * R2D; }
+
+// Days from Schlyter epoch (1999-Dec-31 00:00 UT)
+function schlD(date) {
+  return date.getTime() / 86400000 - 10956.0;
+}
+
+// Solve Kepler's equation; M in degrees, returns E in degrees
+function keplerE(M, e) {
+  M = rev(M);
+  let E = M + (180 / Math.PI) * e * sind(M) * (1 + e * cosd(M));
+  for (let k = 0; k < 15; k++) {
+    const dE = (M - (E - (180 / Math.PI) * e * sind(E))) / (1 - e * cosd(E));
+    E += dE;
+    if (Math.abs(dE) < 1e-9) break;
+  }
+  return E;
+}
+
+// ── Sun ──────────────────────────────────────────────────────────
+// Returns { ra(h), dec(°), xs, ys, ecl, M, w }
+function sunPos(d) {
+  const w  = 282.9404 + 4.70935e-5 * d;
+  const e  = 0.016709 - 1.151e-9 * d;
+  const M  = rev(356.0470 + 0.9856002585 * d);
+  const E  = keplerE(M, e);
+  const xv = cosd(E) - e;
+  const yv = Math.sqrt(1 - e * e) * sind(E);
+  const v  = rev(atd2(yv, xv));
+  const r  = Math.sqrt(xv * xv + yv * yv);
+  const ls = rev(v + w);
+
+  // Sun's geocentric rectangular (ecliptic)
+  const xs = r * cosd(ls);
+  const ys = r * sind(ls);
+
+  const ecl = 23.4393 - 3.563e-7 * d;
+  const xe  = xs;
+  const ye  = ys * cosd(ecl);
+  const ze  = ys * sind(ecl);
+
+  return {
+    ra:  rev(atd2(ye, xe)) / 15,
+    dec: atd2(ze, Math.sqrt(xe*xe + ye*ye)),
+    xs, ys, ecl, M, w
+  };
+}
+
+// ── Moon ─────────────────────────────────────────────────────────
+function moonPos(d, sun) {
+  const N = rev(125.1228 - 0.0529538083 * d);
+  const i = 5.1454;
+  const w = rev(318.0634 + 0.1643573223 * d);
+  const e = 0.054900;
+  const M = rev(115.3654 + 13.0649929509 * d);
+
+  const E  = keplerE(M, e);
+  const xv = cosd(E) - e;
+  const yv = Math.sqrt(1 - e * e) * sind(E);
+  const v  = rev(atd2(yv, xv));
+  const r  = 60.2666 * Math.sqrt(xv * xv + yv * yv);
+
+  const xh = r * (cosd(N)*cosd(v+w) - sind(N)*sind(v+w)*cosd(i));
+  const yh = r * (sind(N)*cosd(v+w) + cosd(N)*sind(v+w)*cosd(i));
+  const zh = r * sind(v+w) * sind(i);
+
+  let lon = atd2(yh, xh);
+  let lat = atd2(zh, Math.sqrt(xh*xh + yh*yh));
+
+  const Ls = rev(sun.M + sun.w);
+  const Lm = rev(M + w + N);
+  const D  = rev(Lm - Ls);
+  const F  = rev(Lm - N);
+  const Ms = sun.M;
+  const Mm = M;
+
+  lon += - 1.274*sind(Mm - 2*D)   + 0.658*sind(2*D)
+         - 0.186*sind(Ms)          - 0.059*sind(2*Mm - 2*D)
+         - 0.057*sind(Mm-2*D+Ms)   + 0.053*sind(Mm+2*D)
+         + 0.046*sind(2*D-Ms)      + 0.041*sind(Mm-Ms)
+         - 0.035*sind(D)           - 0.031*sind(Mm+Ms)
+         - 0.015*sind(2*F-2*D)     + 0.011*sind(Mm-4*D);
+  lat += - 0.173*sind(F-2*D)       - 0.055*sind(Mm-F-2*D)
+         - 0.046*sind(Mm+F-2*D)    + 0.033*sind(F+2*D)
+         + 0.017*sind(2*Mm+F);
+
+  return eclToEq(lon, lat, sun.ecl);
+}
+
+// ── Planets (Mercury – Neptune) ──────────────────────────────────
+function planetPos(body, d, sun) {
+  let N, i, w, a, e, M;
+  switch (body) {
+    case 'Mercury':
+      N=rev(48.3313+3.24587e-5*d); i=7.0047+5e-8*d;
+      w=rev(29.1241+1.01444e-5*d); a=0.387098;
+      e=0.205635+5.59e-10*d;       M=rev(168.6562+4.0923344368*d); break;
+    case 'Venus':
+      N=rev(76.6799+2.4659e-5*d);  i=3.3946+2.75e-8*d;
+      w=rev(54.8910+1.38374e-5*d); a=0.723330;
+      e=0.006773-1.302e-9*d;       M=rev(48.0052+1.6021302244*d); break;
+    case 'Mars':
+      N=rev(49.5574+2.11081e-5*d); i=1.8497-1.78e-8*d;
+      w=rev(286.5016+2.92961e-5*d);a=1.523688;
+      e=0.093405+2.516e-9*d;       M=rev(18.6021+0.5240207766*d); break;
+    case 'Jupiter':
+      N=rev(100.4542+2.76854e-5*d);i=1.3030-1.557e-7*d;
+      w=rev(273.8777+1.64505e-5*d);a=5.20256;
+      e=0.048498+4.469e-9*d;       M=rev(19.8950+0.0830853001*d); break;
+    case 'Saturn':
+      N=rev(113.6634+2.3898e-5*d); i=2.4886-1.081e-7*d;
+      w=rev(339.3939+2.97661e-5*d);a=9.55475;
+      e=0.055546-9.499e-9*d;       M=rev(316.9670+0.0334442282*d); break;
+    case 'Uranus':
+      N=rev(74.0005+1.3978e-5*d);  i=0.7733+1.9e-8*d;
+      w=rev(96.6612+3.0565e-5*d);  a=19.18171-1.55e-8*d;
+      e=0.047318+7.45e-9*d;        M=rev(142.5905+0.011725806*d); break;
+    case 'Neptune':
+      N=rev(131.7806+3.0173e-5*d); i=1.7700-2.55e-7*d;
+      w=rev(272.8461-6.027e-6*d);  a=30.05826+3.313e-8*d;
+      e=0.008606+2.15e-9*d;        M=rev(260.2471+0.005995147*d); break;
+  }
+
+  const E  = keplerE(M, e);
+  const xv = cosd(E) - e;
+  const yv = Math.sqrt(1 - e * e) * sind(E);
+  const v  = atd2(yv, xv);
+  const r  = a * Math.sqrt(xv * xv + yv * yv);
+
+  const xh = r*(cosd(N)*cosd(v+w) - sind(N)*sind(v+w)*cosd(i));
+  const yh = r*(sind(N)*cosd(v+w) + cosd(N)*sind(v+w)*cosd(i));
+  const zh = r * sind(v+w) * sind(i);
+
+  let lon = atd2(yh, xh);
+  let lat = atd2(zh, Math.sqrt(xh*xh + yh*yh));
+
+  // Perturbations (Schlyter)
+  const Mj = rev(19.8950 + 0.0830853001 * d);
+  const Ms = rev(316.9670 + 0.0334442282 * d);
+  const Mu = rev(142.5905 + 0.011725806 * d);
+
+  if (body === 'Jupiter') {
+    lon += -0.332*sind(2*Mj-5*Ms-67.6) - 0.056*sind(2*Mj-2*Ms+21)
+           +0.042*sind(3*Mj-5*Ms+21)   - 0.036*sind(Mj-2*Ms)
+           +0.022*cosd(Mj-Ms)           + 0.023*sind(2*Mj-3*Ms+52)
+           -0.016*sind(Mj-5*Ms-69);
+  } else if (body === 'Saturn') {
+    lon += +0.812*sind(2*Mj-5*Ms-67.6) - 0.229*cosd(2*Mj-4*Ms-2)
+           +0.119*sind(Mj-2*Ms-3)       + 0.046*sind(2*Mj-6*Ms-69)
+           +0.014*sind(Mj-3*Ms+32);
+    lat += -0.020*cosd(2*Mj-4*Ms-2)    + 0.018*sind(2*Mj-6*Ms-49);
+  } else if (body === 'Uranus') {
+    lon += +0.040*sind(Ms-2*Mu+6)       + 0.035*sind(Ms-3*Mu+33)
+           -0.015*sind(Mj-Mu+20);
+  }
+
+  // Perturbed heliocentric → geocentric (add Earth's helio = Sun's geocentric)
+  const xhp = r * cosd(lat) * cosd(lon);
+  const yhp = r * cosd(lat) * sind(lon);
+  const zhp = r * sind(lat);
+
+  const xg = xhp + sun.xs;
+  const yg = yhp + sun.ys;
+  const zg = zhp;
+
+  const ecl = sun.ecl;
+  const xe = xg;
+  const ye = yg * cosd(ecl) - zg * sind(ecl);
+  const ze = yg * sind(ecl) + zg * cosd(ecl);
+
+  return {
+    ra:  rev(atd2(ye, xe)) / 15,
+    dec: atd2(ze, Math.sqrt(xe*xe + ye*ye))
+  };
+}
+
+// ── Ecliptic → Equatorial ─────────────────────────────────────────
+function eclToEq(lon, lat, ecl) {
+  const xec = cosd(lon) * cosd(lat);
+  const yec = sind(lon) * cosd(lat);
+  const zec = sind(lat);
+  const xe = xec;
+  const ye = yec * cosd(ecl) - zec * sind(ecl);
+  const ze = yec * sind(ecl) + zec * cosd(ecl);
+  return {
+    ra:  rev(atd2(ye, xe)) / 15,
+    dec: atd2(ze, Math.sqrt(xe*xe + ye*ye))
+  };
+}
+
+// ── Greenwich Mean Sidereal Time (degrees) ───────────────────────
+function gmst(date) {
+  const JD = date.getTime() / 86400000 + 2440587.5;
+  return rev(280.46061837 + 360.98564736629 * (JD - 2451545.0));
+}
+
+// ── Equatorial → Horizontal ──────────────────────────────────────
+function equToHor(ra, dec, lat, lon, date) {
+  const lst = rev(gmst(date) + lon);
+  const ha  = rev(lst - ra * 15);
+  const sinAlt = sind(lat)*sind(dec) + cosd(lat)*cosd(dec)*cosd(ha);
+  const alt = asnd(sinAlt);
+  const az  = rev(atd2(-cosd(dec)*sind(ha),
+                        sind(dec)*cosd(lat) - cosd(dec)*sind(lat)*cosd(ha)));
+  return { alt, az };
+}
+
+// ── Constellation (nearest centroid, J2000) ───────────────────────
+// Data: [name, RA (hours), Dec (degrees)]
+const CONSTS = [
+  ['Andromeda',22.1,37.4],['Antlia',10.3,-33.0],['Apus',16.1,-75.7],
+  ['Aquarius',22.3,-10.2],['Aquila',19.7,3.4],['Ara',17.4,-56.6],
+  ['Aries',2.6,20.8],['Auriga',6.1,42.0],['Boötes',14.7,31.2],
+  ['Caelum',4.7,-37.9],['Camelopardalis',5.8,69.4],['Cancer',8.6,19.8],
+  ['Canes Venatici',13.1,40.1],['Canis Major',6.8,-22.1],['Canis Minor',7.7,6.4],
+  ['Capricornus',21.0,-18.0],['Carina',9.2,-59.5],['Cassiopeia',1.3,62.2],
+  ['Centaurus',13.1,-47.6],['Cepheus',22.0,71.0],['Cetus',1.7,-7.2],
+  ['Chamaeleon',10.7,-79.2],['Circinus',14.6,-63.0],['Columba',5.9,-35.1],
+  ['Coma Berenices',12.8,23.3],['Corona Australis',18.6,-41.1],
+  ['Corona Borealis',15.8,32.6],['Corvus',12.4,-18.4],['Crater',11.4,-15.9],
+  ['Crux',12.4,-60.2],['Cygnus',20.6,44.5],['Delphinus',20.7,11.7],
+  ['Dorado',5.6,-59.4],['Draco',15.1,67.0],['Equuleus',21.2,7.8],
+  ['Eridanus',3.3,-29.0],['Fornax',2.8,-31.6],['Gemini',7.1,22.6],
+  ['Grus',22.5,-46.4],['Hercules',17.4,27.5],['Horologium',3.3,-53.3],
+  ['Hydra',11.6,-14.5],['Hydrus',2.3,-69.9],['Indus',21.9,-59.7],
+  ['Lacerta',22.5,46.1],['Leo',10.7,13.1],['Leo Minor',10.2,32.1],
+  ['Lepus',5.6,-19.1],['Libra',15.2,-15.2],['Lupus',15.2,-42.7],
+  ['Lynx',7.9,47.5],['Lyra',18.9,36.7],['Mensa',5.4,-77.5],
+  ['Microscopium',20.9,-36.3],['Monoceros',7.2,-3.8],['Musca',12.6,-70.2],
+  ['Norma',16.1,-51.0],['Octans',22.0,-82.2],['Ophiuchus',17.0,-4.0],
+  ['Orion',5.6,5.9],['Pavo',19.6,-65.7],['Pegasus',22.7,19.5],
+  ['Perseus',3.2,45.0],['Phoenix',1.5,-48.2],['Pictor',5.7,-53.5],
+  ['Pisces',0.5,13.7],['Piscis Austrinus',22.3,-30.6],['Puppis',7.3,-31.0],
+  ['Pyxis',8.9,-27.4],['Reticulum',3.9,-60.0],['Sagitta',19.7,18.9],
+  ['Sagittarius',19.1,-28.5],['Scorpius',16.9,-27.0],['Sculptor',0.4,-32.1],
+  ['Scutum',18.7,-10.0],['Serpens',17.5,2.0],['Sextans',10.3,-2.6],
+  ['Taurus',4.7,14.9],['Telescopium',19.3,-51.4],['Triangulum',2.2,31.5],
+  ['Triangulum Australe',15.9,-65.4],['Tucana',0.8,-64.9],
+  ['Ursa Major',11.3,50.7],['Ursa Minor',15.0,77.0],
+  ['Vela',10.0,-47.2],['Virgo',13.4,-4.2],['Volans',7.8,-69.8],
+  ['Vulpecula',20.2,24.4]
+];
+
+function constellation(ra, dec) {
+  const raR = ra * 15 * D2R, decR = dec * D2R;
+  const cx = Math.cos(decR)*Math.cos(raR);
+  const cy = Math.cos(decR)*Math.sin(raR);
+  const cz = Math.sin(decR);
+  let best = -Infinity, name = '—';
+  for (const [n, cr, cd] of CONSTS) {
+    const r = cr*15*D2R, d = cd*D2R;
+    const dot = cx*Math.cos(d)*Math.cos(r) + cy*Math.cos(d)*Math.sin(r) + cz*Math.sin(d);
+    if (dot > best) { best = dot; name = n; }
+  }
+  return name;
+}
+
+// ════════════════════════════════════════════════════════
+//  Planet metadata
+// ════════════════════════════════════════════════════════
+const PLANETS = [
+  { name:'Sun',     icon:'☀️',  body:'Sun'     },
+  { name:'Moon',    icon:'🌙',  body:'Moon'    },
+  { name:'Mercury', icon:'☿',   body:'Mercury' },
+  { name:'Venus',   icon:'♀',   body:'Venus'   },
+  { name:'Mars',    icon:'♂',   body:'Mars'    },
+  { name:'Jupiter', icon:'♃',   body:'Jupiter' },
+  { name:'Saturn',  icon:'♄',   body:'Saturn'  },
+  { name:'Uranus',  icon:'⛢',   body:'Uranus'  },
+  { name:'Neptune', icon:'♆',   body:'Neptune' },
+];
+
+// ════════════════════════════════════════════════════════
+//  App state
+// ════════════════════════════════════════════════════════
+let observerLat = null, observerLon = null;
+let autoRefresh = true, autoTimer = null;
+
+// ════════════════════════════════════════════════════════
+//  Formatting helpers
+// ════════════════════════════════════════════════════════
+function fmtRA(ra) {
+  const h = Math.floor(ra);
+  const m = Math.floor((ra - h) * 60);
+  const s = Math.round(((ra - h)*60 - m)*60);
+  return `${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+}
+function fmtDec(dec) {
+  const sgn = dec < 0 ? '−' : '+';
+  const a = Math.abs(dec);
+  const d = Math.floor(a), m = Math.floor((a-d)*60);
+  const s = Math.round(((a-d)*60-m)*60);
+  return `${sgn}${String(d).padStart(2,'0')}° ${String(m).padStart(2,'0')}′ ${String(s).padStart(2,'0')}″`;
+}
+function fmtAz(az) {
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return `${az.toFixed(1)}° ${dirs[Math.round(az/22.5)%16]}`;
+}
+function altColor(alt) {
+  if (alt > 45) return '#3dba6e';
+  if (alt > 15) return '#8acc50';
+  if (alt > 0)  return '#d4a830';
+  return '#884040';
+}
+
+// ════════════════════════════════════════════════════════
+//  Main compute & render
+// ════════════════════════════════════════════════════════
+function compute() {
+  if (observerLat === null) return;
+  const now = new Date();
+  const d   = schlD(now);
+  const sun  = sunPos(d);
+
+  document.getElementById('timestamp').textContent =
+    now.toLocaleString(undefined, { weekday:'short', year:'numeric', month:'short',
+      day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  for (const p of PLANETS) {
+    let eq;
+    if (p.body === 'Sun')  eq = sun;
+    else if (p.body === 'Moon') eq = moonPos(d, sun);
+    else eq = planetPos(p.body, d, sun);
+
+    const hor  = equToHor(eq.ra, eq.dec, observerLat, observerLon, now);
+    const con  = constellation(eq.ra, eq.dec);
+    const up   = hor.alt > 0;
+    const pct  = Math.max(0, Math.min(100, (hor.alt + 90) / 180 * 100));
+
+    const card = document.createElement('div');
+    card.className = `card ${up ? 'up' : 'down'}`;
+    card.innerHTML = `
+      <div class="card-head">
+        <span class="planet-icon">${p.icon}</span>
+        <span class="planet-name">${p.name}</span>
+        <span class="badge ${up ? 'badge-up' : 'badge-down'}">${up ? 'VISIBLE' : 'BELOW'}</span>
+      </div>
+      <div class="card-body">
+        <div><div class="lbl">Constellation</div><div class="val green">${con}</div></div>
+        <div><div class="lbl">Altitude</div><div class="val gold">${hor.alt.toFixed(2)}°</div></div>
+        <div><div class="lbl">Azimuth</div><div class="val">${fmtAz(hor.az)}</div></div>
+        <div><div class="lbl">Right Ascension</div><div class="val">${fmtRA(eq.ra)}</div></div>
+        <div class="full"><div class="lbl">Declination</div><div class="val">${fmtDec(eq.dec)}</div></div>
+        <div class="alt-bar"><div class="alt-fill" style="width:${pct}%;background:${altColor(hor.alt)}"></div></div>
+      </div>`;
+    grid.appendChild(card);
+  }
+
+  document.getElementById('status').textContent =
+    `Observer: ${Math.abs(observerLat).toFixed(4)}° ${observerLat>=0?'N':'S'}, ` +
+    `${Math.abs(observerLon).toFixed(4)}° ${observerLon>=0?'E':'W'} · Last updated: ${now.toLocaleTimeString()}`;
+}
+
+function refresh() { compute(); }
+
+// ════════════════════════════════════════════════════════
+//  Location
+// ════════════════════════════════════════════════════════
+function setLocation(lat, lon) {
+  observerLat = lat; observerLon = lon;
+  document.getElementById('inp-lat').value = lat.toFixed(5);
+  document.getElementById('inp-lon').value = lon.toFixed(5);
+  document.getElementById('gps-status').textContent = 'Location set ✓';
+  compute();
+  scheduleAuto();
+}
+
+function computeFromForm() {
+  const lat = parseFloat(document.getElementById('inp-lat').value);
+  const lon = parseFloat(document.getElementById('inp-lon').value);
+  if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    document.getElementById('gps-status').textContent = 'Invalid coords!';
+    return;
+  }
+  setLocation(lat, lon);
+}
+
+function gpsLocate() {
+  if (!navigator.geolocation) {
+    document.getElementById('gps-status').textContent = 'GPS not available';
+    return;
+  }
+  document.getElementById('gps-status').textContent = 'Acquiring GPS…';
+  navigator.geolocation.getCurrentPosition(
+    pos => setLocation(pos.coords.latitude, pos.coords.longitude),
+    err => {
+      const msgs = ['', 'Permission denied', 'Position unavailable', 'Timeout'];
+      document.getElementById('gps-status').textContent = msgs[err.code] || 'GPS error';
+    },
+    { enableHighAccuracy: false, timeout: 8000 }
+  );
+}
+
+// ════════════════════════════════════════════════════════
+//  Auto-refresh
+// ════════════════════════════════════════════════════════
+function toggleAuto() {
+  autoRefresh = !autoRefresh;
+  document.getElementById('auto-btn').textContent = `Auto: ${autoRefresh ? 'ON' : 'OFF'}`;
+  autoRefresh ? scheduleAuto() : clearTimeout(autoTimer);
+}
+function scheduleAuto() {
+  clearTimeout(autoTimer);
+  if (autoRefresh) autoTimer = setTimeout(() => { compute(); scheduleAuto(); }, 60000);
+}
+
+// ════════════════════════════════════════════════════════
+//  Service worker registration (PWA offline support)
+// ════════════════════════════════════════════════════════
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
+
+// ════════════════════════════════════════════════════════
+//  Boot — try GPS silently, fall back to prompting user
+// ════════════════════════════════════════════════════════
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(
+    pos => setLocation(pos.coords.latitude, pos.coords.longitude),
+    ()  => { /* silently fail — user sees the form */ }
+  );
+}
+</script>
+</body>
+</html>
