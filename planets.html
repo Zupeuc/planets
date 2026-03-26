@@ -135,6 +135,21 @@
     .alt-bar { grid-column: 1/-1; height: 3px; background: #0d1f35; border-radius: 2px; overflow: hidden; margin-top: 6px; }
     .alt-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
 
+    /* ── Moon phase ──────────────────────────────── */
+    .moon-phase-row {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 6px;
+      padding-top: 8px;
+      border-top: 1px solid #152030;
+    }
+    .moon-canvas { flex-shrink: 0; width: 54px; height: 54px; }
+    .moon-info { display: flex; flex-direction: column; gap: 3px; }
+    .moon-phase-name { font-size: 0.9rem; color: #c8d8f0; font-weight: 600; }
+    .moon-illum { font-size: 0.74rem; color: #5a8aaa; }
+
     #status { text-align: center; color: #3a5a7a; font-size: 0.78rem; margin-top: 16px; }
     #err-msg {
       text-align: center; color: #ba5050; font-size: 0.82rem;
@@ -464,6 +479,71 @@ function constellation(ra, dec) {
 }
 
 // ════════════════════════════════════════════════════════
+//  Moon phase
+// ════════════════════════════════════════════════════════
+function moonPhaseInfo(moonRA, sunRA) {
+  // Elongation 0-360° (0=new, 90=first quarter, 180=full, 270=last quarter)
+  const angle = rev(moonRA * 15 - sunRA * 15);
+  const illum = Math.round((1 - Math.cos(angle * D2R)) / 2 * 100);
+
+  let name, emoji;
+  if      (angle <  22.5)               { name = 'New Moon';         emoji = '🌑'; }
+  else if (angle <  67.5)               { name = 'Waxing Crescent';  emoji = '🌒'; }
+  else if (angle < 112.5)               { name = 'First Quarter';    emoji = '🌓'; }
+  else if (angle < 157.5)               { name = 'Waxing Gibbous';   emoji = '🌔'; }
+  else if (angle < 202.5)               { name = 'Full Moon';        emoji = '🌕'; }
+  else if (angle < 247.5)               { name = 'Waning Gibbous';   emoji = '🌖'; }
+  else if (angle < 292.5)               { name = 'Last Quarter';     emoji = '🌗'; }
+  else if (angle < 337.5)               { name = 'Waning Crescent';  emoji = '🌘'; }
+  else                                  { name = 'New Moon';         emoji = '🌑'; }
+
+  return { angle, illum, name, emoji };
+}
+
+function drawMoonPhase(canvas, phaseAngle) {
+  const s   = 54;
+  const dpr = window.devicePixelRatio || 1;
+  const sw  = Math.round(s * dpr);
+  canvas.width = canvas.height = sw;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, sw, sw);
+
+  const cx = sw / 2, cy = sw / 2, r = sw / 2 - dpr;
+  const phi  = ((phaseAngle % 360) + 360) % 360;
+  const cosP = Math.cos(phi * D2R);
+  const waxing = phi <= 180;
+
+  // Draw pixel-by-pixel for correctness
+  const img = ctx.createImageData(sw, sw);
+  const d   = img.data;
+
+  for (let py = 0; py < sw; py++) {
+    for (let px = 0; px < sw; px++) {
+      const dx = px - cx, dy = py - cy;
+      if (dx * dx + dy * dy > r * r) continue;
+
+      const hc  = Math.sqrt(Math.max(0, r * r - dy * dy));
+      const lit = waxing ? dx > cosP * hc : dx < -cosP * hc;
+      const i   = (py * sw + px) * 4;
+
+      if (lit) {
+        d[i] = 200; d[i+1] = 215; d[i+2] = 238; d[i+3] = 255;
+      } else {
+        d[i] = 10;  d[i+1] = 18;  d[i+2] = 32;  d[i+3] = 255;
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  // Rim
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - 0.5, 0, Math.PI * 2);
+  ctx.strokeStyle = '#253a50';
+  ctx.lineWidth = dpr;
+  ctx.stroke();
+}
+
+// ════════════════════════════════════════════════════════
 //  Planet metadata
 // ════════════════════════════════════════════════════════
 const PLANETS = [
@@ -538,6 +618,21 @@ function compute() {
     const up   = hor.alt > 0;
     const pct  = Math.max(0, Math.min(100, (hor.alt + 90) / 180 * 100));
 
+    // Moon-specific phase block
+    let moonExtra = '';
+    if (p.body === 'Moon') {
+      const mp = moonPhaseInfo(eq.ra, sun.ra);
+      moonExtra = `
+        <div class="moon-phase-row">
+          <canvas class="moon-canvas" id="moon-phase-canvas"></canvas>
+          <div class="moon-info">
+            <div class="moon-phase-name">${mp.emoji} ${mp.name}</div>
+            <div class="moon-illum">${mp.illum}% illuminated</div>
+            <div class="moon-illum">Elongation ${mp.angle.toFixed(1)}°</div>
+          </div>
+        </div>`;
+    }
+
     const card = document.createElement('div');
     card.className = `card ${up ? 'up' : 'down'}`;
     card.innerHTML = `
@@ -553,8 +648,15 @@ function compute() {
         <div><div class="lbl">Right Ascension</div><div class="val">${fmtRA(eq.ra)}</div></div>
         <div class="full"><div class="lbl">Declination</div><div class="val">${fmtDec(eq.dec)}</div></div>
         <div class="alt-bar"><div class="alt-fill" style="width:${pct}%;background:${altColor(hor.alt)}"></div></div>
+        ${moonExtra}
       </div>`;
     grid.appendChild(card);
+
+    // Draw the moon phase graphic after the card is in the DOM
+    if (p.body === 'Moon') {
+      const c = card.querySelector('#moon-phase-canvas');
+      if (c) drawMoonPhase(c, moonPhaseInfo(eq.ra, sun.ra).angle);
+    }
   }
 
   document.getElementById('status').textContent =
